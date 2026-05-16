@@ -13,3 +13,4 @@ models/*.joblib
 .venv/
 venv/
 *.egg-info/
+data/raw/CMaps/
