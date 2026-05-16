@@ -1,0 +1,91 @@
+{
+  "data_stats": {
+    "dataset": "FD001",
+    "sequence_length": 30,
+    "num_features": 168,
+    "kept_sensors": [
+      "sensor_2",
+      "sensor_3",
+      "sensor_4",
+      "sensor_6",
+      "sensor_7",
+      "sensor_8",
+      "sensor_9",
+      "sensor_11",
+      "sensor_12",
+      "sensor_13",
+      "sensor_14",
+      "sensor_15",
+      "sensor_16",
+      "sensor_17",
+      "sensor_18",
+      "sensor_19",
+      "sensor_20",
+      "sensor_21"
+    ],
+    "dropped_sensors": [
+      "sensor_1",
+      "sensor_5",
+      "sensor_10"
+    ],
+    "train_samples": 12009,
+    "test_samples": 2933
+  },
+  "weights": {
+    "lstm": 0.7563356872255234,
+    "xgboost": 0.2436643127744767
+  },
+  "metrics": {
+    "lstm": {
+      "rmse": 9.13617446916285,
+      "mae": 6.51909743743687,
+      "r2": 0.8811341143799154,
+      "nasa_score": 3365.642197133767
+    },
+    "xgboost": {
+      "rmse": 13.562859435981181,
+      "mae": 10.470594196310188,
+      "r2": 0.7380424119445693,
+      "nasa_score": 7170.650875223837
+    },
+    "ensemble": {
+      "rmse": 9.62898523388914,
+      "mae": 7.182379165014294,
+      "r2": 0.8679648683248832,
+      "nasa_score": 3574.922527409729
+    }
+  },
+  "fingerprinting": {
+    "overall_silhouette_score": 0.022495274119602154,
+    "clusters": [
+      {
+        "cluster": 0,
+        "label": "fast-burn",
+        "engine_count": 17,
+        "avg_rul_at_detection": 55.235294342041016,
+        "silhouette": 0.022495274119602154
+      },
+      {
+        "cluster": 1,
+        "label": "slow-decay",
+        "engine_count": 12,
+        "avg_rul_at_detection": 70.16666412353516,
+        "silhouette": 0.022495274119602154
+      },
+      {
+        "cluster": 2,
+        "label": "sudden-failure",
+        "engine_count": 1,
+        "avg_rul_at_detection": 125.0,
+        "silhouette": 0.022495274119602154
+      }
+    ]
+  },
+  "latency": {
+    "preprocessing_ms": 0.0003749992174562067,
+    "lstm_inference_ms": 13.455687500027125,
+    "xgboost_inference_ms": 13.493166499756626,
+    "shap_explanation_ms": 0.031499500437348615,
+    "total_end_to_end_ms": 26.980728499438555
+  }
+}

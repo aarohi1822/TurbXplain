@@ -1,0 +1,7 @@
+{
+  "preprocessing_ms": 0.0006249997568374965,
+  "lstm_inference_ms": 1.3966249998702551,
+  "xgboost_inference_ms": 0.05787550026070676,
+  "shap_explanation_ms": 0.8404995001001225,
+  "total_end_to_end_ms": 2.295624999987922
+}

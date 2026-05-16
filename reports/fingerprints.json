@@ -1,0 +1,26 @@
+{
+  "overall_silhouette_score": 0.15298891090612618,
+  "clusters": [
+    {
+      "cluster": 0,
+      "label": "fast-burn",
+      "engine_count": 1,
+      "avg_rul_at_detection": 111.0,
+      "silhouette": 0.15298891090612618
+    },
+    {
+      "cluster": 1,
+      "label": "slow-decay",
+      "engine_count": 21,
+      "avg_rul_at_detection": 84.14286041259766,
+      "silhouette": 0.15298891090612618
+    },
+    {
+      "cluster": 2,
+      "label": "sudden-failure",
+      "engine_count": 1,
+      "avg_rul_at_detection": 112.0,
+      "silhouette": 0.15298891090612618
+    }
+  ]
+}

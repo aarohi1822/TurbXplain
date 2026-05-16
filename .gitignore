@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.h5
+*.pt
+*.joblib
+*.json.bak
+data/raw/*.txt
+data/processed/*.npz
+models/*.pt
+models/*.json
+models/*.joblib
+.venv/
+venv/
+*.egg-info/
