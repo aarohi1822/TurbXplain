@@ -79,17 +79,17 @@ Silhouette score of 0.153 indicates limited cluster separability using XGBoost S
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    NASA C-MAPSS Data                     │
-│              (21 sensors × N cycles × 100 engines)       │
+│                    NASA C-MAPSS Data                    │
+│              (21 sensors × N cycles × 100 engines)      │
 └────────────────────────┬────────────────────────────────┘
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│              Preprocessing Pipeline                      │
-│  • Drop constant sensors  • Min-Max normalization        │
-│  • Rolling mean/std/diff/trend features                  │
-│  • RUL labeling (clipped at 125)                         │
-│  • Sequence windowing (30 cycles)                        │
+│              Preprocessing Pipeline                     │
+│  • Drop constant sensors  • Min-Max normalization       │
+│  • Rolling mean/std/diff/trend features                 │
+│  • RUL labeling (clipped at 125)                        │
+│  • Sequence windowing (30 cycles)                       │
 └──────────┬──────────────────────────────┬───────────────┘
            │                              │
            ▼                              ▼
@@ -103,8 +103,8 @@ Silhouette score of 0.153 indicates limited cluster separability using XGBoost S
          │                              │
          ▼                              ▼
 ┌─────────────────────────────────────────────────────────┐
-│           Learned Weighted Ensemble                      │
-│           LSTM: 0.88  |  XGBoost: 0.12                   │
+│           Learned Weighted Ensemble                     │
+│           LSTM: 0.88  |  XGBoost: 0.12                  │
 │           Ensemble RMSE: 14.89  |  R²: 0.75             │
 └────────────────────────┬────────────────────────────────┘
                          │
@@ -118,9 +118,9 @@ Silhouette score of 0.153 indicates limited cluster separability using XGBoost S
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│              Streamlit Dashboard                         │
-│  RUL Predictor | Explainability | Fingerprints           │
-│  What-If Simulator | Model Performance | Reports         │
+│              Streamlit Dashboard                        │
+│  RUL Predictor | Explainability | Fingerprints          │
+│  What-If Simulator | Model Performance | Reports        │
 └─────────────────────────────────────────────────────────┘
 ```
 
