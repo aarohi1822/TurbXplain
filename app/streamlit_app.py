@@ -1,17 +1,17 @@
-import json
 import sys
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import json
 import joblib
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import MODEL_DIR, REPORT_DIR
 
@@ -98,7 +98,6 @@ elif page == "Explainability Panel":
         fig.update_layout(template="plotly_white", height=500, xaxis_title="Operating Cycle", yaxis_title="SHAP Value (contribution to RUL)")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Global feature importance
         st.subheader("Global Feature Importance (Top 15)")
         importance_path = REPORT_DIR / "global_feature_importance.csv"
         if importance_path.exists():
@@ -147,7 +146,6 @@ elif page == "What-If Simulator":
         feature_names = bundle.get("feature_names", [f"feature_{i}" for i in range(bundle.get("num_features", 10))])
         num_features = bundle["num_features"]
 
-        # Show sliders for top 8 most important features
         importance_path = REPORT_DIR / "global_feature_importance.csv"
         if importance_path.exists():
             top_feats = pd.read_csv(importance_path, index_col=0).head(8).index.tolist()
@@ -182,7 +180,6 @@ elif page == "What-If Simulator":
 elif page == "Model Performance":
     st.title("📊 Model Performance")
 
-    # RMSE Comparison Bar Chart
     if bundle and "metrics" in bundle:
         metrics = bundle["metrics"]
         models = list(metrics.keys())
@@ -197,7 +194,6 @@ elif page == "Model Performance":
         fig_rmse.update_layout(title="RMSE by Model", yaxis_title="RMSE (lower is better)", template="plotly_white", height=400)
         st.plotly_chart(fig_rmse, use_container_width=True)
 
-        # Metrics table
         st.subheader("Full Metrics")
         metrics_df = pd.DataFrame({
             "Model": [m.upper() for m in models],
@@ -208,7 +204,6 @@ elif page == "Model Performance":
         })
         st.dataframe(metrics_df, use_container_width=True, hide_index=True)
 
-        # Ensemble weights
         weights_path = MODEL_DIR / "ensemble_weights.json"
         if weights_path.exists():
             weights = json.loads(weights_path.read_text())
@@ -217,7 +212,6 @@ elif page == "Model Performance":
             col1.metric("LSTM Weight", f"{weights.get('lstm', 0):.3f}")
             col2.metric("XGBoost Weight", f"{weights.get('xgboost', 0):.3f}")
 
-    # Ablation Study
     ablation_path = REPORT_DIR / "ablation_results.json"
     if ablation_path.exists():
         ablation = json.loads(ablation_path.read_text())
@@ -233,7 +227,6 @@ elif page == "Model Performance":
         fig_abl.update_layout(template="plotly_white", showlegend=False, height=400)
         st.plotly_chart(fig_abl, use_container_width=True)
 
-    # LSTM Training Curve
     history_path = REPORT_DIR / "lstm_history.json"
     if history_path.exists():
         history = json.loads(history_path.read_text())
@@ -248,7 +241,6 @@ elif page == "Model Performance":
         fig_train.update_layout(title="LSTM RMSE Over Training Epochs", xaxis_title="Epoch", yaxis_title="RMSE", template="plotly_white", height=400)
         st.plotly_chart(fig_train, use_container_width=True)
 
-    # Actual vs Predicted scatter
     predictions_path = REPORT_DIR / "predictions.csv"
     if predictions_path.exists():
         preds = pd.read_csv(predictions_path)
@@ -260,7 +252,6 @@ elif page == "Model Performance":
         fig_scatter.update_layout(title="Actual vs Predicted RUL", xaxis_title="True RUL", yaxis_title="Predicted RUL", template="plotly_white", height=450)
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # Latency
     latency_path = REPORT_DIR / "latency.json"
     if latency_path.exists():
         latency = json.loads(latency_path.read_text())
