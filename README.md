@@ -1,37 +1,85 @@
-# TurbXplain — Explainable Predictive Maintenance
-[Live Demo](https://turbxplain-aarohi.streamlit.app/) 
+# TurbXplain: Explainable RUL Prediction on NASA C-MAPSS
+
+[Live demo](https://turbxplain-aarohi.streamlit.app/)
 
 > Don't just predict failure. **Explain why.**
 
-TurbXplain predicts Remaining Useful Life (RUL) for turbofan engines using a hybrid LSTM + XGBoost ensemble, then explains every prediction with SHAP-based diagnostics. Built on NASA C-MAPSS data with a full Streamlit dashboard for operators and engineers.
+TurbXplain predicts the Remaining Useful Life (RUL) of turbofan engines with an LSTM + XGBoost ensemble, explains predictions with SHAP, and serves everything in a Streamlit dashboard. All reported results are on **C-MAPSS FD001**.
 
 ---
 
-## Why This Exists
+## Problem
 
-Most predictive maintenance models are black boxes — they tell you *if* something will fail, but not *when*, *why*, or *what type* of failure pattern it matches. TurbXplain answers all three:
+Engines degrade gradually, and maintenance is cheapest when it is scheduled shortly before failure. Given the sensor history of an engine up to now, the task is to predict how many operating cycles it has left (RUL), and to show which sensors drive that prediction.
 
-- **When** — Remaining Useful Life regression (not binary fail/no-fail)
-- **Why** — Per-prediction SHAP explanations showing which sensors drive each alert
-- **What type** — Degradation fingerprinting clusters engines into failure archetypes
+The data is NASA's C-MAPSS turbofan simulation. This project uses the **FD001** subset: one operating condition, one fault mode (HPC degradation), 100 run-to-failure training engines and 100 test engines whose histories stop at some point before failure. Each cycle has 3 operational settings and 21 sensor readings.
 
 ---
 
-## What's Different
+## Approach
 
-| Feature | Typical PredMaint Projects | TurbXplain |
-|---|---|---|
-| Prediction | Binary (fail/no-fail) | RUL regression (cycles to failure) |
-| Model | Single model | Hybrid LSTM + XGBoost ensemble with learned weights |
-| Explainability | None or basic feature importance | Per-prediction SHAP + Temporal SHAP Waterfall |
-| Failure typing | None | Degradation fingerprinting via SHAP trajectory clustering |
-| Deployment | Notebook only | FastAPI + Streamlit dashboard |
+1. **Preprocessing** ([preprocessor.py](src/data/preprocessor.py))
+   - Drop the 6 near-constant sensors and keep 15.
+   - Add rolling mean/std (windows 5, 10, 20), first differences and a 10-cycle trend slope per sensor, for 137 features in total.
+   - Apply min-max scaling fitted on the training set.
+   - Label RUL as piecewise-linear, capped at **125** cycles.
+   - Cut sliding windows of **30 cycles**.
+2. **LSTM** ([lstm_model.py](src/models/lstm_model.py)): BatchNorm, then a 2-layer LSTM (hidden size 128), then an MLP head. Trained with Huber loss, AdamW and cosine warm restarts; early stopping on validation RMSE.
+3. **XGBoost** ([xgb_model.py](src/models/xgb_model.py)): uses the last row of each window as tabular features. Hyper-parameters are chosen by a 20-candidate randomized search, followed by early stopping.
+4. **Ensemble** ([ensemble.py](src/models/ensemble.py)): a convex blend of the two predictions. The weights are learned on held-out validation engines (20% of training engines, split by engine) and never on the test set.
+5. **Explainability** ([shap_explainer.py](src/explainability/shap_explainer.py), [temporal_waterfall.py](src/explainability/temporal_waterfall.py)): TreeSHAP on the XGBoost model, plotted per engine over time.
+6. **Degradation fingerprinting** ([degradation_fingerprint.py](src/explainability/degradation_fingerprint.py)): K-Means (k=3) on summary statistics of each engine's SHAP trajectory. This part is exploratory; see the results below.
+7. **Evaluation** ([benchmark.py](src/evaluation/benchmark.py))
+   - Uses the official FD001 test set, with one prediction per engine from its last window, scored against min(`RUL_FD001`, 125).
+   - Reports RMSE and the NASA/PHM08 score.
+   - Runs 5 seeds, each controlling the train/validation split, LSTM initialisation and batch order, and XGBoost's seed and search.
 
-### Key Innovations
-
-- **Hybrid Ensemble with Learned Blending** — LSTM captures temporal degradation patterns, XGBoost captures tabular feature interactions. Weights are learned on validation data via constrained optimization — not manually set.
-- **Temporal SHAP Waterfall** — An interactive timeline showing how each sensor's contribution to the failure prediction shifts as degradation develops. Reveals *when* the model first detects trouble and *which sensor* triggers the alert.
-- **Degradation Fingerprinting (exploratory)** — Engines are clustered (k=3, named fast-burn / slow-decay / sudden-failure) using summary statistics of their SHAP trajectory vectors. A check against sensor degradation slopes shows that these names are not yet validated (see Results).
+```
+┌─────────────────────────────────────────────────────────┐
+│                    NASA C-MAPSS Data                    │
+│   FD001 · 21 sensors × N cycles · 100 train/100 test    │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              Preprocessing Pipeline                     │
+│  • Drop constant sensors  • Min-Max normalization       │
+│  • Rolling mean/std/diff/trend features                 │
+│  • RUL labeling (clipped at 125)                        │
+│  • Sequence windowing (30 cycles)                       │
+└──────────┬──────────────────────────────┬───────────────┘
+           │                              │
+           ▼                              ▼
+┌────────────────────┐      ┌────────────────────────┐
+│   LSTM (PyTorch)   │      │   XGBoost (Tabular)    │
+│   2-layer, h=128   │      │   Tuned via RandomCV   │
+│   + BatchNorm      │      │   Last-row features    │
+│   + HuberLoss      │      │                        │
+│   (see results)    │      │   (see results)        │
+└────────┬───────────┘      └───────────┬────────────┘
+         │                              │
+         ▼                              ▼
+┌─────────────────────────────────────────────────────────┐
+│           Learned Weighted Ensemble                     │
+│     Weights learned on validation engines (SLSQP)       │
+│     FD001 test metrics: see Results table below         │
+└────────────────────────┬────────────────────────────────┘
+                         │
+           ┌─────────────┼─────────────┐
+           ▼             ▼             ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
+│ SHAP         │ │ Temporal     │ │ Degradation      │
+│ TreeExplainer│ │ Waterfall    │ │ Fingerprinting   │
+│ (XGBoost)    │ │ (per engine) │ │ (K-Means on SHAP)│
+└──────────────┘ └──────────────┘ └──────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              Streamlit Dashboard                        │
+│  RUL Predictor | Explainability | Fingerprints          │
+│  What-If Simulator | Model Performance | Reports        │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -111,201 +159,72 @@ Health-indicator sensors: s2, s3, s4, s6, s7, s8, s9, s11, s12, s13, s14, s15, s
 The cluster names are cluster indices with descriptive names attached. They are not validated failure types.
 <!-- RESULTS:END -->
 
-### Inference Latency
+### Inference Latency (deployed model)
+
+Median of 30 single-window calls, from `reports/latency.json`. This is a one-off measurement on a laptop CPU and was not re-measured in the 5-seed benchmark.
 
 | Component | Time (ms) |
 |---|---:|
 | LSTM inference | 1.40 |
 | XGBoost inference | 0.06 |
-| SHAP explanation | 0.84 |
-| **Total end-to-end** | **2.30** |
+| SHAP explanation (XGBoost) | 0.84 |
+| **Total** | **2.30** |
 
 ---
 
-## Architecture
+## How to Run
 
+Requires Python 3.12 or 3.13. The pinned versions in `requirements.txt` were installed and tested on both.
+
+```bash
+git clone https://github.com/aarohi1822/TurbXplain.git
+cd TurbXplain
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    NASA C-MAPSS Data                    │
-│   FD001 · 21 sensors × N cycles · 100 train/100 test    │
-└────────────────────────┬────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│              Preprocessing Pipeline                     │
-│  • Drop constant sensors  • Min-Max normalization       │
-│  • Rolling mean/std/diff/trend features                 │
-│  • RUL labeling (clipped at 125)                        │
-│  • Sequence windowing (30 cycles)                       │
-└──────────┬──────────────────────────────┬───────────────┘
-           │                              │
-           ▼                              ▼
-┌────────────────────┐      ┌────────────────────────┐
-│   LSTM (PyTorch)   │      │   XGBoost (Tabular)    │
-│   2-layer, h=128   │      │   Tuned via RandomCV   │
-│   + BatchNorm      │      │   Last-row features    │
-│   + HuberLoss      │      │                        │
-│   (see results)    │      │   (see results)        │
-└────────┬───────────┘      └───────────┬────────────┘
-         │                              │
-         ▼                              ▼
-┌─────────────────────────────────────────────────────────┐
-│           Learned Weighted Ensemble                     │
-│     Weights learned on validation engines (SLSQP)       │
-│     FD001 test metrics: see Results table above         │
-└────────────────────────┬────────────────────────────────┘
-                         │
-           ┌─────────────┼─────────────┐
-           ▼             ▼             ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
-│ SHAP         │ │ Temporal     │ │ Degradation      │
-│ TreeExplainer│ │ Waterfall    │ │ Fingerprinting   │
-│ (per pred)   │ │ (per engine) │ │ (K-Means on SHAP)│
-└──────────────┘ └──────────────┘ └──────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│              Streamlit Dashboard                        │
-│  RUL Predictor | Explainability | Fingerprints          │
-│  What-If Simulator | Model Performance | Reports        │
-└─────────────────────────────────────────────────────────┘
+
+**Data.** Download [NASA C-MAPSS](https://www.kaggle.com/datasets/behrad3d/nasa-cmaps) and put `train_FD001.txt`, `test_FD001.txt` and `RUL_FD001.txt` directly in `data/raw/`.
+
+```bash
+python -m src.data.loader --dataset FD001     # preprocess -> data/processed/FD001_sequences.npz
+python -m src.models.trainer                  # train the deployed model -> models/, reports/
+python -m src.evaluation.benchmark            # 5-seed benchmark (CPU, ~1 h on an M2) -> results/metrics.json
+python -m src.evaluation.update_readme        # regenerate the results section above from results/metrics.json
+streamlit run app/streamlit_app.py            # dashboard
+pytest -q                                     # tests
 ```
+
+The benchmark caches finished seeds in `results/runs/`. Delete that folder to retrain from scratch.
 
 ---
 
-## Tech Stack
+## Limitations
 
-| Category | Tools |
-|---|---|
-| Core ML | PyTorch, XGBoost, scikit-learn |
-| Explainability | SHAP (TreeExplainer, GradientExplainer) |
-| Data | Pandas, NumPy, SciPy |
-| Backend | FastAPI, Uvicorn |
-| Dashboard | Streamlit, Plotly |
-| Storage | joblib (model bundles) |
-| Dev | Git, pytest |
+- **FD001 only.** The model has not been trained or evaluated on FD002–FD004, which add multiple operating conditions and fault modes. The results say nothing about those settings.
+- **Small ensemble gain.** The learned ensemble beats the LSTM in every seed, but by about 0.25 RMSE. That is smaller than the seed-to-seed spread (about ±0.6).
+- **SHAP explains XGBoost, not the ensemble.** The explanations and fingerprints come from the XGBoost component, which carries only about 13% of the ensemble weight. The LSTM, which dominates the prediction, is not explained. A GradientExplainer path exists in code but is unused.
+- **Fingerprint labels are not validated.** The silhouette scores show little cluster structure, and the fast-burn / slow-decay / sudden-failure names do not consistently match a sensor-based degradation slope (see above). Treat the clusters as indices.
+- **The deployed model is not one of the 5 benchmark seeds.** The dashboard's predictor, explainability and what-if pages use the single model from `src.models.trainer` (seed 42). Its metrics are not what the results table reports.
+- **API is out of date.** `src/api/serve.py` (and the Dockerfile that runs it) expects the older demo bundle format. With the current trained bundle, `/health` works but `/predict` and `/explain` return HTTP 500.
+- **Bitwise reproducibility not verified.** Seeds are fixed and deterministic algorithms are enabled on CPU, but no seed has been re-run to confirm identical numbers. Results on other hardware or library versions may differ slightly.
+- **Test-set truncation.** Test engines are scored at a single point (the end of their history). This matches the literature but gives no information about accuracy earlier in an engine's life.
 
 ---
 
 ## Project Structure
 
 ```
-TurbXplain/
-├── app/
-│   └── streamlit_app.py          # Interactive dashboard (6 pages)
-├── data/
-│   ├── raw/                      # NASA C-MAPSS files (not in repo)
-│   ├── processed/                # Preprocessed .npz arrays
-│   └── download_data.py          # Data download helper
-├── models/                       # Trained model weights (not in repo)
-├── results/
-│   ├── metrics.json              # 5-seed FD001 benchmark (source of README tables)
-│   ├── runs/                     # Per-seed raw results
-│   └── predictions/              # Per-seed official-test predictions
-├── reports/
-│   ├── results_summary.md        # Metrics, ablation, latency
-│   ├── ablation_results.json     # Full ablation data
-│   ├── fingerprints.json         # Clustering results
-│   ├── shap_contributions.csv    # Per-prediction SHAP values
-│   ├── predictions.csv           # All test predictions
-│   ├── latency.json              # Inference benchmarks
-│   └── lstm_history.json         # Training curves
-├── src/
-│   ├── api/
-│   │   └── serve.py              # FastAPI endpoints
-│   ├── data/
-│   │   ├── loader.py             # C-MAPSS file parser
-│   │   └── preprocessor.py       # Normalization, features, windowing
-│   ├── evaluation/
-│   │   ├── metrics.py            # RMSE, MAE, R², NASA scoring function
-│   │   ├── benchmark.py          # Standard FD001 multi-seed evaluation
-│   │   ├── update_readme.py      # Writes README results from results/metrics.json
-│   │   └── ablation.py           # Ablation study runner
-│   ├── explainability/
-│   │   ├── shap_explainer.py     # SHAP value computation
-│   │   ├── temporal_waterfall.py # Temporal SHAP timeline
-│   │   └── degradation_fingerprint.py
-│   └── models/
-│       ├── lstm_model.py         # PyTorch LSTM architecture
-│       ├── xgb_model.py          # XGBoost wrapper
-│       ├── ensemble.py           # Learned weighted blending
-│       └── trainer.py            # End-to-end training pipeline
-├── tests/
-├── requirements.txt
-├── Dockerfile
-└── README.md
+app/streamlit_app.py           Dashboard (6 pages)
+src/data/                      C-MAPSS loader, preprocessing
+src/models/                    LSTM, XGBoost, ensemble, trainer (deployed model)
+src/explainability/            SHAP, temporal waterfall, fingerprinting
+src/evaluation/                Metrics, 5-seed benchmark, README generator
+src/api/serve.py               FastAPI service (see Limitations)
+results/                       Benchmark output: metrics.json, per-seed runs and predictions
+reports/                       Artifacts of the deployed model (SHAP, predictions, latency)
+models/turbxplain_bundle.joblib  Deployed model bundle
+tests/                         pytest
 ```
-
----
-
-## Quick Start
-
-### 1. Setup
-
-```bash
-git clone https://github.com/aarohi1822/TurbXplain.git
-cd TurbXplain
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Get the Data
-
-Download [NASA C-MAPSS](https://www.kaggle.com/datasets/behrad3d/nasa-cmaps) from Kaggle and place the `.txt` files in `data/raw/CMaps/`.
-
-### 3. Preprocess + Train
-
-```bash
-python -m src.data.loader --dataset FD001
-python -m src.models.trainer
-```
-
-### 3b. Reproduce the FD001 Benchmark (5 seeds)
-
-```bash
-python -m src.evaluation.benchmark       # trains 5 seeds on CPU, writes results/metrics.json
-python -m src.evaluation.update_readme   # regenerates the README results section from it
-```
-
-### 4. Launch Dashboard
-
-```bash
-streamlit run app/streamlit_app.py
-```
-
-### 5. Launch API (optional)
-
-```bash
-uvicorn src.api.serve:app --reload
-```
-
-### 6. Run Tests
-
-```bash
-pytest -q
-```
-
----
-
-## Dataset
-
-**NASA C-MAPSS Turbofan Engine Degradation Simulation**
-
-- 4 sub-datasets (FD001–FD004) with varying operating conditions and fault modes
-- FD001: 100 train engines, 100 test engines, 1 fault mode, 1 operating condition
-- 21 sensor channels + 3 operational settings per engine per cycle
-- Source: [Kaggle](https://www.kaggle.com/datasets/behrad3d/nasa-cmaps)
-
----
-
-## Future Work
-
-- Train on FD002–FD004 (multi-fault, multi-operating-condition)
-- LSTM GradientExplainer for richer temporal SHAP trajectories
-- Attention-based degradation fingerprinting
-- Transfer learning on SECOM semiconductor manufacturing data
-- Downloadable PDF maintenance reports from dashboard
 
 ---
 
