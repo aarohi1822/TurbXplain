@@ -14,3 +14,4 @@ models/*.joblib
 venv/
 *.egg-info/
 data/raw/CMaps/
+results/checkpoints/

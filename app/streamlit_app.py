@@ -13,7 +13,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.config import MODEL_DIR, REPORT_DIR
+from src.config import MODEL_DIR, PROJECT_ROOT as CONFIG_ROOT, REPORT_DIR
+
+RESULTS_DIR = CONFIG_ROOT / "results"
 
 st.set_page_config(page_title="TurbXplain", page_icon="⚙️", layout="wide")
 
@@ -43,6 +45,26 @@ page = st.sidebar.radio("Navigate", PAGES)
 
 bundle_path = MODEL_DIR / "turbxplain_bundle.joblib"
 bundle = joblib.load(bundle_path) if bundle_path.exists() else None
+
+# Standard FD001 benchmark (official test set, RUL cap 125, 5 seeds); written by
+# `python -m src.evaluation.benchmark`. Same source as the README results tables.
+benchmark_path = RESULTS_DIR / "metrics.json"
+benchmark = json.loads(benchmark_path.read_text()) if benchmark_path.exists() else None
+BENCH_NAMES = {
+    "lstm": "LSTM only",
+    "xgboost": "XGBoost only",
+    "simple_average": "Simple average",
+    "ensemble": "Learned ensemble",
+}
+
+
+def benchmark_caption(m: dict) -> str:
+    p = m["protocol"]
+    return (
+        f"**{m['dataset']}**, official test set. One prediction per engine from its last {p['sequence_length']}-cycle "
+        f"window ({m['label_check']['test_engines_evaluated']} engines), target = min(RUL_{m['dataset']}, {p['rul_cap']}). "
+        f"Mean ± std over {len(p['seeds'])} seeds. NASA score = PHM08 scoring function summed over the test engines."
+    )
 
 
 # ── PAGE 1: RUL Predictor ──────────────────────────────────────────────────
@@ -131,7 +153,25 @@ elif page == "Degradation Fingerprinting":
         fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.info("⚠️ Silhouette score of 0.153 indicates this is exploratory. Future work: LSTM attention weights as alternative clustering features.")
+        st.caption("Clusters above come from the deployed model (first 2,000 test SHAP rows).")
+        if benchmark:
+            fp = benchmark["summary"]["fingerprints"]
+            impl, full = fp["as_implemented_first_2000_rows"], fp["all_test_engines"]
+            st.subheader("Do the archetype labels hold up? (5-seed check)")
+            st.dataframe(pd.DataFrame([
+                {
+                    "Engines clustered": name,
+                    "Silhouette (mean ± std)": f"{f['silhouette']['mean']:.3f} ± {f['silhouette']['std']:.3f}",
+                    "Seeds where fast-burn has steepest slope": f"{f['seeds_where_fast_burn_has_steepest_slope']}/{f['n_seeds']}",
+                } for name, f in [("First 2,000 test rows (as implemented)", impl), ("All 100 test engines", full)]
+            ]), use_container_width=True, hide_index=True)
+            st.warning(
+                "⚠️ Exploratory. Silhouette scores are low (no or weak cluster structure), and the names do not consistently "
+                "match a model-independent sensor degradation slope. Treat the clusters as indices, not validated failure "
+                "types. Details are in the README results section."
+            )
+        else:
+            st.info(f"⚠️ Silhouette score of {data['overall_silhouette_score']:.3f}. This clustering is exploratory.")
     else:
         st.warning("No fingerprint data found. Run `python -m src.models.trainer` first.")
 
@@ -180,7 +220,55 @@ elif page == "What-If Simulator":
 elif page == "Model Performance":
     st.title("📊 Model Performance")
 
-    if bundle and "metrics" in bundle:
+    if benchmark:
+        off = benchmark["summary"]["official_test"]
+        st.markdown(benchmark_caption(benchmark))
+        keys = list(BENCH_NAMES)
+        st.subheader("Ablation: RMSE (official test set)")
+        fig_abl = go.Figure(data=[go.Bar(
+            x=[BENCH_NAMES[k] for k in keys],
+            y=[off[k]["rmse"]["mean"] for k in keys],
+            error_y=dict(type="data", array=[off[k]["rmse"]["std"] for k in keys]),
+            marker_color=["#42a5f5", "#ab47bc", "#78909c", "#ef5350"],
+            text=[f"{off[k]['rmse']['mean']:.2f}" for k in keys],
+            textposition="auto",
+        )])
+        fig_abl.update_layout(yaxis_title="RMSE (lower is better)", template="plotly_white", height=400)
+        st.plotly_chart(fig_abl, use_container_width=True)
+
+        st.subheader("Full Metrics (mean ± std)")
+        st.dataframe(pd.DataFrame([
+            {
+                "Model": BENCH_NAMES[k],
+                "RMSE": f"{off[k]['rmse']['mean']:.2f} ± {off[k]['rmse']['std']:.2f}",
+                "NASA Score": f"{off[k]['nasa_score']['mean']:.1f} ± {off[k]['nasa_score']['std']:.1f}",
+                "MAE": f"{off[k]['mae']['mean']:.2f} ± {off[k]['mae']['std']:.2f}",
+                "R²": f"{off[k]['r2']['mean']:.3f} ± {off[k]['r2']['std']:.3f}",
+            } for k in keys
+        ]), use_container_width=True, hide_index=True)
+
+        w = benchmark["summary"]["ensemble_weight_lstm"]
+        st.subheader("Learned Ensemble Weights (mean ± std)")
+        col1, col2 = st.columns(2)
+        col1.metric("LSTM Weight", f"{w['mean']:.2f} ± {w['std']:.2f}")
+        col2.metric("XGBoost Weight", f"{1 - w['mean']:.2f} ± {w['std']:.2f}")
+
+        seeds = benchmark["protocol"]["seeds"]
+        seed = st.selectbox("Seed for actual-vs-predicted plot", seeds)
+        seed_preds_path = RESULTS_DIR / "predictions" / f"official_test_seed{seed}.csv"
+        if seed_preds_path.exists():
+            sp = pd.read_csv(seed_preds_path)
+            st.subheader(f"Actual vs Predicted, official test set (ensemble, seed {seed})")
+            fig_sp = go.Figure()
+            fig_sp.add_trace(go.Scatter(x=sp["y_true_capped"], y=sp["ensemble"], mode="markers", text=sp["engine_id"],
+                                        marker=dict(color="#FF5722", size=7, opacity=0.7), name="Engines"))
+            fig_sp.add_trace(go.Scatter(x=[0, 125], y=[0, 125], mode="lines", line=dict(color="gray", dash="dash"), name="Perfect"))
+            fig_sp.update_layout(xaxis_title="True RUL (capped at 125)", yaxis_title="Predicted RUL", template="plotly_white", height=450)
+            st.plotly_chart(fig_sp, use_container_width=True)
+        st.divider()
+        st.caption("Below: training curve and latency of the deployed model bundle.")
+
+    if not benchmark and bundle and "metrics" in bundle:
         metrics = bundle["metrics"]
         models = list(metrics.keys())
         rmse_vals = [metrics[m]["rmse"] for m in models]
@@ -213,7 +301,7 @@ elif page == "Model Performance":
             col2.metric("XGBoost Weight", f"{weights.get('xgboost', 0):.3f}")
 
     ablation_path = REPORT_DIR / "ablation_results.json"
-    if ablation_path.exists():
+    if not benchmark and ablation_path.exists():
         ablation = json.loads(ablation_path.read_text())
         st.subheader("Ablation Study")
         ablation_df = pd.DataFrame([
@@ -242,7 +330,7 @@ elif page == "Model Performance":
         st.plotly_chart(fig_train, use_container_width=True)
 
     predictions_path = REPORT_DIR / "predictions.csv"
-    if predictions_path.exists():
+    if not benchmark and predictions_path.exists():
         preds = pd.read_csv(predictions_path)
         st.subheader("Actual vs Predicted (Ensemble)")
         fig_scatter = go.Figure()
@@ -266,6 +354,7 @@ else:
     st.markdown("Download generated artifacts from the latest training run.")
 
     report_files = {
+        "FD001 Benchmark Metrics (5 seeds)": RESULTS_DIR / "metrics.json",
         "Results Summary": REPORT_DIR / "results_summary.md",
         "Ablation Results": REPORT_DIR / "ablation_results.json",
         "Fingerprints": REPORT_DIR / "fingerprints.json",

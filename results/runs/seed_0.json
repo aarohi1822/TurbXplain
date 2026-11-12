@@ -1,0 +1,267 @@
+{
+  "seed": 0,
+  "official_test": {
+    "lstm": {
+      "rmse": 14.193799473060245,
+      "nasa_score": 572.4302368164062,
+      "mae": 9.880566596984863,
+      "r2": 0.8745450973510742
+    },
+    "xgboost": {
+      "rmse": 17.166741725918026,
+      "nasa_score": 661.6558227539062,
+      "mae": 12.363858222961426,
+      "r2": 0.8164873123168945
+    },
+    "simple_average": {
+      "rmse": 14.504559556387939,
+      "nasa_score": 453.4090576171875,
+      "mae": 10.606483459472656,
+      "r2": 0.868991494178772
+    },
+    "ensemble": {
+      "rmse": 14.019150018074733,
+      "nasa_score": 518.8123391321226,
+      "mae": 9.866574482289218,
+      "r2": 0.8776134598718233
+    }
+  },
+  "all_test_windows": {
+    "lstm": {
+      "rmse": 14.946611123663827,
+      "nasa_score": 40970.6953125,
+      "mae": 11.081599235534668,
+      "r2": 0.7471851110458374
+    },
+    "xgboost": {
+      "rmse": 18.068975746330626,
+      "nasa_score": 80418.1171875,
+      "mae": 13.90196704864502,
+      "r2": 0.6305257081985474
+    },
+    "simple_average": {
+      "rmse": 15.261273329019662,
+      "nasa_score": 40953.6015625,
+      "mae": 12.046595573425293,
+      "r2": 0.7364283800125122
+    },
+    "ensemble": {
+      "rmse": 14.75779701646732,
+      "nasa_score": 38806.43491999614,
+      "mae": 11.209843586776547,
+      "r2": 0.7535321525711693
+    }
+  },
+  "ensemble_weights": {
+    "lstm": 0.8703804467474558,
+    "xgboost": 0.1296195532525442
+  },
+  "lstm_epochs_run": 20,
+  "lstm_best_val_rmse": 11.918382925653127,
+  "xgb_best_params": {
+    "subsample": 0.8,
+    "n_estimators": 800,
+    "max_depth": 6,
+    "learning_rate": 0.05
+  },
+  "xgb_best_iteration": 121,
+  "train_seconds": {
+    "lstm": 165.09819388389587,
+    "xgboost": 256.8665680885315
+  },
+  "fingerprints": {
+    "as_implemented_first_2000_rows": {
+      "engines_clustered": 23,
+      "silhouette": 0.1435779006307672,
+      "clusters": [
+        {
+          "cluster": 0,
+          "label": "fast-burn",
+          "engine_count": 1,
+          "mean_degradation_slope": 7.778400898853149e-05,
+          "std_degradation_slope": null,
+          "engines": [
+            9
+          ]
+        },
+        {
+          "cluster": 1,
+          "label": "slow-decay",
+          "engine_count": 21,
+          "mean_degradation_slope": 0.0005318155647338421,
+          "std_degradation_slope": 0.0002953899215706389,
+          "engines": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ]
+        },
+        {
+          "cluster": 2,
+          "label": "sudden-failure",
+          "engine_count": 1,
+          "mean_degradation_slope": 0.0007334128462177723,
+          "std_degradation_slope": null,
+          "engines": [
+            1
+          ]
+        }
+      ],
+      "fast_burn_has_steepest_slope": false,
+      "fast_burn_steeper_than_slow_decay": false
+    },
+    "all_test_engines": {
+      "engines_clustered": 100,
+      "silhouette": 0.09265022039804856,
+      "clusters": [
+        {
+          "cluster": 0,
+          "label": "fast-burn",
+          "engine_count": 52,
+          "mean_degradation_slope": 0.0007680599745607618,
+          "std_degradation_slope": 0.0004185790100582388,
+          "engines": [
+            3,
+            4,
+            5,
+            6,
+            8,
+            11,
+            14,
+            18,
+            20,
+            28,
+            30,
+            31,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            40,
+            41,
+            42,
+            43,
+            45,
+            46,
+            47,
+            49,
+            51,
+            56,
+            57,
+            58,
+            60,
+            61,
+            63,
+            64,
+            66,
+            68,
+            70,
+            74,
+            77,
+            80,
+            81,
+            82,
+            84,
+            86,
+            88,
+            89,
+            90,
+            91,
+            92,
+            93,
+            94,
+            98
+          ]
+        },
+        {
+          "cluster": 1,
+          "label": "slow-decay",
+          "engine_count": 47,
+          "mean_degradation_slope": 0.0005190399012942288,
+          "std_degradation_slope": 0.0003034008940453377,
+          "engines": [
+            2,
+            7,
+            9,
+            10,
+            12,
+            13,
+            15,
+            16,
+            17,
+            19,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            29,
+            32,
+            39,
+            44,
+            48,
+            50,
+            52,
+            53,
+            54,
+            55,
+            59,
+            62,
+            65,
+            67,
+            69,
+            71,
+            72,
+            73,
+            75,
+            76,
+            78,
+            79,
+            83,
+            85,
+            87,
+            95,
+            96,
+            97,
+            99,
+            100
+          ]
+        },
+        {
+          "cluster": 2,
+          "label": "sudden-failure",
+          "engine_count": 1,
+          "mean_degradation_slope": 0.0007334128462177723,
+          "std_degradation_slope": null,
+          "engines": [
+            1
+          ]
+        }
+      ],
+      "fast_burn_has_steepest_slope": true,
+      "fast_burn_steeper_than_slow_decay": true
+    }
+  }
+}

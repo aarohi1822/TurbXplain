@@ -53,7 +53,7 @@ class XGBPredictor:
             .reset_index(drop=True)
         )
 
-    def randomized_search(self, X, y, n_iter: int = 20, cv: int = 3) -> RandomizedSearchCV:
+    def randomized_search(self, X, y, n_iter: int = 20, cv: int = 3, random_state: int = 42, verbose: int = 2) -> RandomizedSearchCV:
         param_dist = {
             "n_estimators": [250, 500, 800],
             "max_depth": [3, 4, 6, 8],
@@ -66,9 +66,9 @@ class XGBPredictor:
             n_iter=n_iter,
             cv=cv,
             scoring="neg_root_mean_squared_error",
-            random_state=42,
+            random_state=random_state,
             n_jobs=1,
-            verbose=2,
+            verbose=verbose,
         )
         search.fit(X, y)
         self.model = search.best_estimator_

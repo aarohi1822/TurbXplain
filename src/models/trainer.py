@@ -214,9 +214,9 @@ def set_seeds(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def split_by_engine(engine_ids: np.ndarray, val_fraction: float = 0.2) -> tuple[np.ndarray, np.ndarray]:
+def split_by_engine(engine_ids: np.ndarray, val_fraction: float = 0.2, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     unique = np.unique(engine_ids)
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(seed)
     rng.shuffle(unique)
     val_count = max(1, int(len(unique) * val_fraction))
     val_engines = set(unique[:val_count])
