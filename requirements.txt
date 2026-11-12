@@ -1,5 +1,5 @@
 # Exact versions used to produce results/metrics.json (Python 3.12, macOS arm64).
-# Tested on Python 3.11-3.12.
+# Installed and tested (pytest + dashboard) on Python 3.12 and 3.13.
 torch==2.7.1
 xgboost==3.0.3
 shap==0.51.0
@@ -8,9 +8,11 @@ pandas==2.2.3
 numpy==2.4.5
 scipy==1.15.2
 fastapi==0.141.1
+starlette==1.10.0
 uvicorn==0.53.0
 streamlit==1.46.1
 plotly==6.2.0
 pydantic==2.13.5
 joblib==1.4.2
 pytest==9.1.1
+httpx2==2.16.0          # test-only: FastAPI TestClient (tests/test_api.py)

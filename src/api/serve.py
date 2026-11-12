@@ -82,11 +82,15 @@ def predict(payload: SensorPayload) -> dict:
 def explain(payload: SensorPayload) -> dict:
     if MODEL_BUNDLE is None:
         raise HTTPException(status_code=503, detail="Model bundle not found. Run the experiment pipeline first.")
-    result = predict_sequence(MODEL_BUNDLE, np.asarray(payload.sensor_data, dtype=float))
+    try:
+        result = predict_sequence(MODEL_BUNDLE, np.asarray(payload.sensor_data, dtype=float))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     top = sorted(result["shap_values"].items(), key=lambda item: abs(item[1]), reverse=True)[:10]
     return {
         "shap_values": dict(top),
         "top_drivers": [f"{feature} ({value:+.3f})" for feature, value in top[:3]],
+        "explained_model": result["explained_model"],
         "degradation_cluster": "see reports/fingerprints.json",
         "degradation_confidence": None,
         "onset_cycle_pct": None,

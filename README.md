@@ -191,6 +191,7 @@ python -m src.models.trainer                  # train the deployed model -> mode
 python -m src.evaluation.benchmark            # 5-seed benchmark (CPU, ~1 h on an M2) -> results/metrics.json
 python -m src.evaluation.update_readme        # regenerate the results section above from results/metrics.json
 streamlit run app/streamlit_app.py            # dashboard
+uvicorn src.api.serve:app                     # REST API: /health, /predict, /explain (also the Docker entrypoint)
 pytest -q                                     # tests
 ```
 
@@ -205,7 +206,7 @@ The benchmark caches finished seeds in `results/runs/`. Delete that folder to re
 - **SHAP explains XGBoost, not the ensemble.** The explanations and fingerprints come from the XGBoost component, which carries only about 13% of the ensemble weight. The LSTM, which dominates the prediction, is not explained. A GradientExplainer path exists in code but is unused.
 - **Fingerprint labels are not validated.** The silhouette scores show little cluster structure, and the fast-burn / slow-decay / sudden-failure names do not consistently match a sensor-based degradation slope (see above). Treat the clusters as indices.
 - **The deployed model is not one of the 5 benchmark seeds.** The dashboard's predictor, explainability and what-if pages use the single model from `src.models.trainer` (seed 42). Its metrics are not what the results table reports.
-- **API is out of date.** `src/api/serve.py` (and the Dockerfile that runs it) expects the older demo bundle format. With the current trained bundle, `/health` works but `/predict` and `/explain` return HTTP 500.
+- **API input is preprocessed features.** `/predict` and `/explain` expect one window of 30 cycles × 137 already-preprocessed features (the order in the bundle's `feature_names`), not raw sensor readings. The `confidence_interval` it returns is a fixed ±10 cycles, not a calibrated interval.
 - **Bitwise reproducibility not verified.** Seeds are fixed and deterministic algorithms are enabled on CPU, but no seed has been re-run to confirm identical numbers. Results on other hardware or library versions may differ slightly.
 - **Test-set truncation.** Test engines are scored at a single point (the end of their history). This matches the literature but gives no information about accuracy earlier in an engine's life.
 
@@ -219,7 +220,7 @@ src/data/                      C-MAPSS loader, preprocessing
 src/models/                    LSTM, XGBoost, ensemble, trainer (deployed model)
 src/explainability/            SHAP, temporal waterfall, fingerprinting
 src/evaluation/                Metrics, 5-seed benchmark, README generator
-src/api/serve.py               FastAPI service (see Limitations)
+src/api/serve.py               FastAPI service (/predict, /explain)
 results/                       Benchmark output: metrics.json, per-seed runs and predictions
 reports/                       Artifacts of the deployed model (SHAP, predictions, latency)
 models/turbxplain_bundle.joblib  Deployed model bundle
@@ -242,4 +243,4 @@ B.Tech CSE, COER University, Roorkee
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
