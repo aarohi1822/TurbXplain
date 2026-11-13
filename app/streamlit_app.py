@@ -13,7 +13,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.config import MODEL_DIR, PROJECT_ROOT as CONFIG_ROOT, REPORT_DIR
+from src.config import MODEL_DIR, PROJECT_ROOT as CONFIG_ROOT, REPORT_DIR, SEQUENCE_LENGTH
 
 RESULTS_DIR = CONFIG_ROOT / "results"
 
@@ -88,14 +88,17 @@ if page == "RUL Predictor":
 
         st.markdown(f"**Risk Level:** <span style='color:{color};font-size:1.3em;font-weight:700'>{label}</span>", unsafe_allow_html=True)
 
-        engine_rows["cycle"] = np.arange(1, len(engine_rows) + 1)
+        # Window k (1-based) ends at engine cycle k + SEQUENCE_LENGTH - 1 (test cycles run 1..N without gaps).
+        engine_rows["cycle"] = np.arange(1, len(engine_rows) + 1) + SEQUENCE_LENGTH - 1
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=engine_rows["cycle"], y=engine_rows["y_true"], name="True RUL", mode="lines", line=dict(color="#2196F3", width=2)))
         fig.add_trace(go.Scatter(x=engine_rows["cycle"], y=engine_rows["ensemble_prediction"], name="Ensemble", mode="lines", line=dict(color="#FF5722", width=2)))
         fig.add_trace(go.Scatter(x=engine_rows["cycle"], y=engine_rows["lstm_prediction"], name="LSTM", mode="lines", line=dict(color="#4CAF50", width=1, dash="dot")))
         fig.add_trace(go.Scatter(x=engine_rows["cycle"], y=engine_rows["xgboost_prediction"], name="XGBoost", mode="lines", line=dict(color="#9C27B0", width=1, dash="dot")))
-        fig.update_layout(title=f"Engine {engine_id} — RUL Predictions Over Time", xaxis_title="Cycle", yaxis_title="RUL (cycles)", template="plotly_white", height=450)
+        fig.update_layout(title=f"Engine {engine_id} — RUL Predictions Over Time", xaxis_title="Engine cycle", yaxis_title="RUL (cycles)", template="plotly_white", height=450)
         st.plotly_chart(fig, use_container_width=True)
+        st.caption(f"Each point is a prediction from the {SEQUENCE_LENGTH}-cycle window ending at that engine cycle, "
+                   f"so the first prediction is at cycle {SEQUENCE_LENGTH}.")
     else:
         st.warning("No predictions found. Run `python -m src.models.trainer` first.")
 
@@ -103,28 +106,36 @@ if page == "RUL Predictor":
 # ── PAGE 2: Explainability Panel ───────────────────────────────────────────
 elif page == "Explainability Panel":
     st.title("🔍 Explainability Panel")
-    st.markdown("Temporal SHAP Waterfall — how each sensor's contribution shifts as degradation develops.")
+    st.markdown("Temporal SHAP Waterfall — how each feature's contribution to the predicted RUL shifts over an engine's life.")
+    st.info("**XGBoost component only.** SHAP values explain the XGBoost model, not the LSTM or the ensemble. "
+            "XGBoost carries a minority of the ensemble weight (see Model Performance).")
 
     shap_path = REPORT_DIR / "shap_contributions.csv"
     if shap_path.exists():
         shap_df = pd.read_csv(shap_path)
         engine_id = st.selectbox("Select Engine", sorted(shap_df["engine_id"].unique()))
         engine = shap_df[shap_df["engine_id"] == engine_id].drop(columns=["engine_id"]).reset_index(drop=True)
+        predictions_path = REPORT_DIR / "predictions.csv"
+        if predictions_path.exists():
+            total_windows = int((pd.read_csv(predictions_path, usecols=["engine_id"])["engine_id"] == engine_id).sum())
+            if len(engine) < total_windows:
+                st.caption(f"Only the first {len(engine)} of this engine's {total_windows} windows have saved SHAP values "
+                           "(the trainer saves SHAP for the first 2,000 test windows).")
 
         top_n = st.slider("Top N features", 3, 15, 8)
         top_features = engine.abs().mean().sort_values(ascending=False).head(top_n).index.tolist()
-        engine.insert(0, "cycle", np.arange(1, len(engine) + 1))
+        engine.insert(0, "cycle", np.arange(1, len(engine) + 1) + SEQUENCE_LENGTH - 1)
 
         long_df = engine.melt(id_vars="cycle", value_vars=top_features, var_name="feature", value_name="shap_value")
-        fig = px.line(long_df, x="cycle", y="shap_value", color="feature", title=f"Engine {engine_id} — Temporal SHAP Waterfall")
-        fig.update_layout(template="plotly_white", height=500, xaxis_title="Operating Cycle", yaxis_title="SHAP Value (contribution to RUL)")
+        fig = px.line(long_df, x="cycle", y="shap_value", color="feature", title=f"Engine {engine_id} — Temporal SHAP Waterfall (XGBoost component only)")
+        fig.update_layout(template="plotly_white", height=500, xaxis_title="Engine cycle", yaxis_title="SHAP Value (contribution to RUL)")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Global Feature Importance (Top 15)")
+        st.subheader("Global Feature Importance (Top 15, XGBoost component only)")
         importance_path = REPORT_DIR / "global_feature_importance.csv"
         if importance_path.exists():
             importance = pd.read_csv(importance_path, index_col=0)
-            fig2 = px.bar(importance.head(15).reset_index(), x="mean_abs_shap", y="index", orientation="h", title="Mean |SHAP| Across All Test Predictions")
+            fig2 = px.bar(importance.head(15).reset_index(), x="mean_abs_shap", y="index", orientation="h", title=f"Mean |SHAP| over the first {len(shap_df):,} test windows (engines {shap_df['engine_id'].min()}–{shap_df['engine_id'].max()})")
             fig2.update_layout(template="plotly_white", yaxis_title="Feature", xaxis_title="Mean |SHAP Value|", height=400)
             fig2.update_yaxes(autorange="reversed")
             st.plotly_chart(fig2, use_container_width=True)
@@ -135,43 +146,45 @@ elif page == "Explainability Panel":
 # ── PAGE 3: Degradation Fingerprinting ─────────────────────────────────────
 elif page == "Degradation Fingerprinting":
     st.title("🧬 Degradation Fingerprinting")
-    st.markdown("Engines clustered into failure archetypes using SHAP trajectory summaries.")
+    st.markdown("K-Means (k=3) on summary statistics of each engine's SHAP trajectory (XGBoost component).")
 
     fingerprints_path = REPORT_DIR / "fingerprints.json"
     if fingerprints_path.exists():
         data = json.loads(fingerprints_path.read_text())
+        # Neutral names: cluster indices carry no validated meaning.
         clusters = pd.DataFrame(data["clusters"])
+        clusters["Cluster"] = clusters["cluster"].map(lambda c: f"Cluster {chr(ord('A') + int(c))}")
+        silhouette = data["overall_silhouette_score"]
 
         col1, col2 = st.columns(2)
-        col1.metric("Overall Silhouette Score", f"{data['overall_silhouette_score']:.3f}")
-        col2.metric("Number of Clusters", len(clusters))
+        col1.metric("Silhouette score", f"{silhouette:.3f}")
+        col2.metric("Number of clusters", len(clusters))
+        st.warning(
+            f"⚠️ **Cluster structure is weak.** Silhouette = {silhouette:.3f} (range −1 to 1; values below 0.25 are "
+            "conventionally read as no substantial structure). The clusters are not validated failure types."
+        )
 
-        st.dataframe(clusters[["label", "engine_count", "avg_rul_at_detection", "silhouette"]], use_container_width=True)
+        st.dataframe(
+            clusters[["Cluster", "engine_count", "avg_rul_at_detection"]].rename(
+                columns={"engine_count": "Engines", "avg_rul_at_detection": "Mean min. true RUL"}),
+            use_container_width=True, hide_index=True,
+        )
 
-        fig = px.pie(clusters, names="label", values="engine_count", title="Engine Distribution by Failure Pattern", color="label",
-                     color_discrete_map={"fast-burn": "#ef5350", "slow-decay": "#42a5f5", "sudden-failure": "#ffa726"})
+        fig = px.pie(clusters, names="Cluster", values="engine_count", title="Engines per cluster", color="Cluster",
+                     color_discrete_map={"Cluster A": "#42a5f5", "Cluster B": "#ab47bc", "Cluster C": "#78909c"})
         fig.update_layout(template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.caption("Clusters above come from the deployed model (first 2,000 test SHAP rows).")
+        n_engines = int(clusters["engine_count"].sum())
+        st.caption(f"Clusters above come from the deployed model: {n_engines} test engines (first 2,000 test SHAP rows).")
         if benchmark:
             fp = benchmark["summary"]["fingerprints"]
             impl, full = fp["as_implemented_first_2000_rows"], fp["all_test_engines"]
-            st.subheader("Do the archetype labels hold up? (5-seed check)")
+            st.subheader("Silhouette across 5 benchmark seeds")
             st.dataframe(pd.DataFrame([
-                {
-                    "Engines clustered": name,
-                    "Silhouette (mean ± std)": f"{f['silhouette']['mean']:.3f} ± {f['silhouette']['std']:.3f}",
-                    "Seeds where fast-burn has steepest slope": f"{f['seeds_where_fast_burn_has_steepest_slope']}/{f['n_seeds']}",
-                } for name, f in [("First 2,000 test rows (as implemented)", impl), ("All 100 test engines", full)]
+                {"Engines clustered": name, "Silhouette (mean ± std)": f"{f['silhouette']['mean']:.3f} ± {f['silhouette']['std']:.3f}"}
+                for name, f in [("First 2,000 test rows (as implemented)", impl), ("All 100 test engines", full)]
             ]), use_container_width=True, hide_index=True)
-            st.warning(
-                "⚠️ Exploratory. Silhouette scores are low (no or weak cluster structure), and the names do not consistently "
-                "match a model-independent sensor degradation slope. Treat the clusters as indices, not validated failure "
-                "types. Details are in the README results section."
-            )
-        else:
-            st.info(f"⚠️ Silhouette score of {data['overall_silhouette_score']:.3f}. This clustering is exploratory.")
     else:
         st.warning("No fingerprint data found. Run `python -m src.models.trainer` first.")
 
@@ -179,10 +192,11 @@ elif page == "Degradation Fingerprinting":
 # ── PAGE 4: What-If Simulator ──────────────────────────────────────────────
 elif page == "What-If Simulator":
     st.title("🎛️ What-If Simulator")
-    st.markdown("Adjust sensor values to see how RUL predictions change. *(Connected to trained model when available.)*")
+    st.markdown("Adjust feature values to see how the RUL prediction changes.")
 
     if bundle and "xgb_model" in bundle:
-        st.markdown("**Using trained XGBoost model for real-time inference.**")
+        st.info("**XGBoost component only.** Predictions here come from the XGBoost model alone, not the LSTM or the "
+                "ensemble. Features without a slider are held at 0.5 (scaled units).")
         feature_names = bundle.get("feature_names", [f"feature_{i}" for i in range(bundle.get("num_features", 10))])
         num_features = bundle["num_features"]
 
@@ -206,7 +220,7 @@ elif page == "What-If Simulator":
 
         label, color = risk_badge(prediction)
         col1, col2 = st.columns(2)
-        col1.metric("Predicted RUL", f"{prediction:.1f} cycles")
+        col1.metric("Predicted RUL (XGBoost only)", f"{prediction:.1f} cycles")
         col2.markdown(f"**Risk:** <span style='color:{color};font-size:1.2em;font-weight:700'>{label}</span>", unsafe_allow_html=True)
     else:
         st.markdown("*Model not loaded. Showing demo simulator.*")
