@@ -15,3 +15,8 @@ venv/
 *.egg-info/
 data/raw/CMaps/
 results/checkpoints/
+
+# Local working notes (not for GitHub)
+CHANGES.md
+CLAUDE_BRIEF.md
+PROJECT_FACTS.md
